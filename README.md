@@ -1,6 +1,6 @@
 # RoboCerebra
 
-[![arXiv](https://img.shields.io/badge/arXiv-2506.06677-red)](https://www.arxiv.org/pdf/2506.06677) [![Dataset](https://img.shields.io/badge/🤗%20Hugging%20Face-Dataset-yellow)](https://huggingface.co/datasets/qiukingballball/RoboCerebraBench)
+[![NeurIPS 2025](https://img.shields.io/badge/arXiv-2506.06677-red)](https://www.arxiv.org/pdf/2506.06677) [![Dataset](https://img.shields.io/badge/🤗%20Hugging%20Face-Dataset-yellow)](https://huggingface.co/datasets/qiukingballball/RoboCerebraBench)
 
 Recent advances in vision-language models (VLMs) have enabled instructionconditioned robotic systems with improved generalization. However, most existing work focuses on reactive System 1 policies, underutilizing VLMs’ strengths
 in semantic reasoning and long-horizon planning. These System 2 capabilities—characterized by deliberative, goal-directed thinking—remain underexplored
