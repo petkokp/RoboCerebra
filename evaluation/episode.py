@@ -218,17 +218,13 @@ def handle_segment_transition(cfg: GenerateConfig, env, goal: Any, step_idx: int
     )
     
     comp_end_dict, _, _ = env._check_success(goal)
-    completed_objects = [
-        obj for obj, rate in comp_end_dict.items()
-        if rate > comp_start_dict.get(obj, 0)
-    ]
 
     json_path = mp4_path.rsplit('.', 1)[0] + ".json"
     with open(json_path, "w", encoding="utf-8") as jf:
         json.dump({
             "video": os.path.basename(mp4_path),
-            "completed_subtasks": completed_objects,
-            "success": len(completed_objects) > 0
+            "completed_subtasks": seg_success,
+            "success": seg_success > 0
         }, jf, ensure_ascii=False, indent=2)
 
     # Prepare the starting completion baseline for the next segment

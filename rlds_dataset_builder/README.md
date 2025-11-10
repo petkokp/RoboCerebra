@@ -210,13 +210,6 @@ episode = {
 - **Cameras**: Agent view + wrist-mounted
 - **Format**: uint8 normalized images
 
-## Verification
-
-Verify conversion success by checking:
-1. HDF5 files in Step 1 output directory
-2. Dataset summary in RLDS build terminal output
-3. TFRecord files in `~/tensorflow_datasets/robo_cerebra_dataset/`
-4. Dataset info and feature specifications
 
 ## File Structure
 
@@ -249,20 +242,4 @@ python regenerate_robocerebra_dataset.py \
 # Step 2: Convert to RLDS
 cd RoboCerebraDataset
 tfds build --overwrite
-```
-
-### Batch Process Multiple Task Types
-```bash
-# Process all RoboCerebra task types
-for task_type in Ideal Random_Disturbance Mix Observation_Mismatching Memory_Execution Memory_Exploration; do
-  echo "Converting $task_type..."
-  python regenerate_robocerebra_dataset.py \
-    --dataset_name "robocerebra_${task_type,,}" \
-    --robocerebra_raw_data_dir "<ROBOCEREBRA_BENCH_PATH>/$task_type" \
-    --robocerebra_target_dir "./converted_hdf5/robocerebra_${task_type,,}" \
-    --scene "coffee_table"
-done
-
-# Convert all HDF5 to RLDS (disable CUDA to avoid initialization errors)
-cd RoboCerebraDataset && CUDA_VISIBLE_DEVICES="" tfds build --overwrite
 ```
