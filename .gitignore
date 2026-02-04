@@ -73,3 +73,13 @@ temp/
 *.tmp
 *.bak
 *.backup
+
+# Evaluation output (rollout videos, logs)
+rollouts/
+evaluation/rollouts/
+
+# External dependencies (clone separately)
+openvla-oft/
+
+# Benchmark data (clone separately)
+RoboCerebra_Bench/

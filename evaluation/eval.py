@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-run_robocerebra_eval.py
+eval.py
 
-Main evaluation script for RoboCerebra tasks using OpenVLA.
+Main evaluation script for RoboCerebra tasks using generic models (OpenVLA, Lerobot, etc.).
 """
 
 import logging
@@ -18,23 +18,9 @@ import numpy as np
 import tqdm
 import wandb
 
-# Monkey patch LlamaRotaryEmbedding to fix device mismatch with bitsandbytes/accelerate
-from transformers.models.llama.modeling_llama import LlamaRotaryEmbedding
+# Add project root to path
+sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-old_rotary_forward = LlamaRotaryEmbedding.forward
-
-
-def new_rotary_forward(self, x, position_ids, **kwargs):
-    self.inv_freq = self.inv_freq.to(x.device)
-    return old_rotary_forward(self, x, position_ids, **kwargs)
-
-
-LlamaRotaryEmbedding.forward = new_rotary_forward
-
-# Append current directory so that interpreter can find experiments.robot
-sys.path.append("../..")
-
-# Import separated modules
 from config import GenerateConfig, validate_config, MOVABLE_OBJECT_LIST
 from robocerebra_logging import setup_logging, log_message, save_results_log
 from task_runner import (
@@ -51,23 +37,11 @@ from episode import (
     execute_policy_step,
     update_completion_tracking,
     finalize_episode,
+    get_libero_dummy_action,
 )
-from utils import get_task_directories
+from utils import get_task_directories, prepare_observation
 from resume import create_step_based_resume_handler
-
-# Import OpenVLA and robot utilities
-from experiments.robot.libero.libero_utils import get_libero_dummy_action
-from experiments.robot.openvla_utils import (
-    get_action_head,
-    get_noisy_action_projector,
-    get_processor,
-    get_proprio_projector,
-)
-from experiments.robot.robot_utils import (
-    get_image_resize_size,
-    get_model,
-    set_seed_everywhere,
-)
+from model_interface import RoboCerebraModel
 
 # --------------------------------------------------------------------------------------------------
 # Logging
@@ -85,50 +59,26 @@ logger = logging.getLogger(__name__)
 # --------------------------------------------------------------------------------------------------
 
 
-def initialize_model(cfg: GenerateConfig):
-    """Initialize OpenVLA model and related components."""
-    model = get_model(cfg)
-    proprio_projector = (
-        get_proprio_projector(cfg, model.llm_dim, proprio_dim=8)
-        if cfg.use_proprio
-        else None
-    )
-    action_head = (
-        get_action_head(cfg, model.llm_dim)
-        if (cfg.use_l1_regression or cfg.use_diffusion)
-        else None
-    )
-    noisy_action_projector = (
-        get_noisy_action_projector(cfg, model.llm_dim) if cfg.use_diffusion else None
-    )
-    processor = get_processor(cfg) if cfg.model_family == "openvla" else None
+def initialize_model(cfg: GenerateConfig) -> RoboCerebraModel:
+    """Initialize model based on configuration."""
+    if cfg.model_family == "openvla":
+        from models.openvla_model import OpenVLAModel
 
-    # unnorm key check
-    unnorm_key = cfg.task_suite_name
-    if unnorm_key not in model.norm_stats:
-        if f"{unnorm_key}_no_noops" in model.norm_stats:
-            unnorm_key = f"{unnorm_key}_no_noops"
-        else:
-            # Fallback for base model
-            available_keys = list(model.norm_stats.keys())
-            print(
-                f"Warning: Action un‑norm key {unnorm_key} not found! Available keys: {available_keys}"
-            )
-            if "bridge_orig" in available_keys:
-                unnorm_key = "bridge_orig"
-            elif "bridge" in available_keys:
-                unnorm_key = "bridge"
-            elif len(available_keys) > 0:
-                unnorm_key = available_keys[0]
-            print(f"Falling back to un‑norm key: {unnorm_key}")
+        model = OpenVLAModel()
+    elif cfg.model_family == "lerobot":
+        from models.lerobot_model import LerobotModel
 
-    cfg.unnorm_key = unnorm_key
+        model = LerobotModel()
+    else:
+        # Try to dynamically import if possible, or raise error
+        raise ValueError(f"Unsupported model family: {cfg.model_family}")
 
-    return model, action_head, proprio_projector, noisy_action_projector, processor
+    model.load(cfg)
+    return model
 
 
 # --------------------------------------------------------------------------------------------------
-# Simplified Episode and Task Functions
+# Episode and Task Functions
 # --------------------------------------------------------------------------------------------------
 
 
@@ -138,13 +88,9 @@ def run_episode(
     naming_step_desc: Sequence[str],
     model_step_desc: Sequence[str],
     step_states: Sequence[np.ndarray] | None,
-    model,
+    model: RoboCerebraModel,
     goal: Any,
     resize_size,
-    processor=None,
-    action_head=None,
-    proprio_projector=None,
-    noisy_action_projector=None,
     log_file=None,
     episode_idx: int = 0,
     distractor_info: Optional[Dict[str, Any]] = None,
@@ -156,7 +102,7 @@ def run_episode(
     initial_state: Optional[np.ndarray] = None,
     resume_handler: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, int, int]:
-    """Run a single evaluation episode (simplified using extracted functions)."""
+    """Run a single evaluation episode."""
 
     # Calculate segment count
     segment_count = (
@@ -177,19 +123,23 @@ def run_episode(
         log_file,
     )
 
+    # Reset model state (e.g. action queue or history)
+    model.reset()
+
     # Initialize dynamic variables
+    resume_trigger_step = None
+    rng = None
+    toggle_dir = -1
+    seg_mid_moved = False
+
     if cfg.dynamic and distractor_info:
         step_addr_y = distractor_info["step_addr"]
         step_base_y = distractor_info["step_base"]
         unrelated_set = distractor_info["unrel"]
         rng = np.random.default_rng()
-        toggle_dir = -1
-        seg_mid_moved = False
-        resume_trigger_step = None
 
     # Initialize episode tracking
     seg_increment_accum = 0
-    action_queue: deque[np.ndarray] = deque(maxlen=cfg.num_open_loop_steps)
     replay_images_all: List[np.ndarray] = []
     replay_images_seg: List[np.ndarray] = []
     t = 0
@@ -197,6 +147,7 @@ def run_episode(
     prev_step_idx = 0
 
     # Initial completion baseline
+    total_completed_prev = 0
     if not wait_flag:
         comp_start_dict, total_completed_prev, _ = env._check_success(goal)
         if cfg.dynamic_shift_description:
@@ -204,12 +155,15 @@ def run_episode(
                 f"[Dynamic Shift] Final completion baseline: {total_completed_prev} total, details: {comp_start_dict}",
                 log_file,
             )
+    else:
+        # If waiting, we initialize comp_start_dict later
+        comp_start_dict = {}
 
     # Main control loop
     while t < max_steps:
         # Initial waiting period
         if t < cfg.num_steps_wait and wait_flag:
-            obs, _, _, _ = env.step(get_libero_dummy_action(cfg.model_family))
+            obs, _, _, _ = env.step(get_libero_dummy_action())
             t += 1
             continue
 
@@ -259,6 +213,9 @@ def run_episode(
             episode_stats["skip_increment"] = skip_increment
             if new_trigger is not None:
                 resume_trigger_step = t
+                # If we skipped/resumed, we should reset model history too?
+                # Usually yes for policies that track history.
+                model.reset()
 
         prev_step_idx = step_idx
 
@@ -280,8 +237,6 @@ def run_episode(
             )
 
         # Policy inference & execution
-        from utils import prepare_observation, process_action
-
         observation, img = prepare_observation(obs, resize_size)
         replay_images_all.append(img)
         replay_images_seg.append(img)
@@ -296,19 +251,11 @@ def run_episode(
                 else model_step_desc[step_idx]
             )
 
-        raw_action = execute_policy_step(
-            cfg,
-            model,
-            observation,
-            desc,
-            action_queue,
-            processor,
-            action_head,
-            proprio_projector,
-            noisy_action_projector,
-        )
+        # Execute policy step (delegates to model)
+        action = execute_policy_step(cfg, model, observation, str(desc))
 
-        obs, _, _, _ = env.step(process_action(raw_action, cfg.model_family).tolist())
+        # Execute action in environment
+        obs, _, _, _ = env.step(action)
         t += 1
 
         # Update completion tracking
@@ -338,21 +285,12 @@ def run_episode(
     )
 
 
-# --------------------------------------------------------------------------------------------------
-# Task-level execution
-# --------------------------------------------------------------------------------------------------
-
-
 def run_task(
     cfg: GenerateConfig,
     task_type: str,
     task_dir: Path,
-    model,
+    model: RoboCerebraModel,
     resize_size,
-    processor=None,
-    action_head=None,
-    proprio_projector=None,
-    noisy_action_projector=None,
     log_file=None,
 ) -> Tuple[int, int, int, int, Dict]:
     """Evaluate a single task directory."""
@@ -444,10 +382,10 @@ def run_task(
         return 0, 0, 0, 0, base_result
 
     # Setup dynamic distractor info and initial states
-    from utils import load_init_state, setup_dynamic_distractor_info
+    from utils import load_init_state
 
     distractor_info = setup_dynamic_distractor_info(
-        cfg, task_dir, env, naming_step_desc, log_file
+        cfg, env, naming_step_desc, str(task_dir), log_file
     )
     initial_states = (
         [load_init_state(cfg, task_type, task_dir.name, log_file)]
@@ -485,10 +423,6 @@ def run_task(
             model,
             goal,
             resize_size,
-            processor,
-            action_head,
-            proprio_projector,
-            noisy_action_projector,
             log_file,
             episode_idx=ep_idx,
             distractor_info=distractor_info,
@@ -537,23 +471,21 @@ def run_task(
     return episodes, successes, task_agent_subtasks, task_possible_subtasks, task_result
 
 
-# --------------------------------------------------------------------------------------------------
-# Main entry point
-# --------------------------------------------------------------------------------------------------
-
-
 @draccus.wrap()
 def eval_robocerebra(cfg: GenerateConfig) -> float:
     """Main evaluation function."""
     validate_config(cfg)
-    set_seed_everywhere(cfg.seed)
-    model, action_head, proprio_projector, noisy_action_projector, processor = (
-        initialize_model(cfg)
-    )
-    resize_size = get_image_resize_size(cfg)
+
+    # Initialize model via generic interface
+    model = initialize_model(cfg)
+
+    # Use model's preferred image size
+    resize_size = model.get_image_size()
+
     log_file, _, run_id, results_log_filepath = setup_logging(cfg)
 
     log_message(f"Starting RoboCerebra evaluation", log_file)
+    log_message(f"Model family: {cfg.model_family}", log_file)
     log_message(f"RoboCerebra root: {cfg.robocerebra_root}", log_file)
     log_message(f"Init files root: {cfg.init_files_root}", log_file)
     log_message(f"Use init files: {cfg.use_init_files}", log_file)
@@ -630,10 +562,6 @@ def eval_robocerebra(cfg: GenerateConfig) -> float:
                 task_dir,
                 model,
                 resize_size,
-                processor,
-                action_head,
-                proprio_projector,
-                noisy_action_projector,
                 log_file,
             )
 

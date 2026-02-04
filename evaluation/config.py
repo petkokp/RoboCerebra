@@ -23,18 +23,42 @@ TASK_MAX_STEPS: Dict[str, int] = {
 # Scene type mapping based on BDDL filename patterns
 SCENE_MAPPINGS = {
     "COFFEE_TABLESCENE": "libero_coffee_table_manipulation",
-    "KITCHEN_TABLESCENE": "libero_kitchen_tabletop_manipulation", 
-    "STUDY_TABLESCENE": "libero_study_tabletop_manipulation"
+    "KITCHEN_TABLESCENE": "libero_kitchen_tabletop_manipulation",
+    "STUDY_TABLESCENE": "libero_study_tabletop_manipulation",
 }
 
 # ★★ List of movable objects - only these are allowed to be moved as distractors ★★
 MOVABLE_OBJECT_LIST = [
-    "alphabet_soup", "bbq_sauce", "butter", "chocolate_pudding", "cookies", "cream_cheese",
-    "ketchup", "macaroni_and_cheese", "milk", "orange_juice", "popcorn", "salad_dressing",
-    "new_salad_dressing", "tomato_sauce", "white_bowl", "akita_black_bowl", "plate",
-    "glazed_rim_porcelain_ramekin", "red_coffee_mug", "porcelain_mug", "white_yellow_mug",
-    "chefmate_8_frypan", "bowl_drainer", "moka_pot", "window", "faucet",
-    "black_book", "yellow_book", "desk_caddy", "wine_bottle"
+    "alphabet_soup",
+    "bbq_sauce",
+    "butter",
+    "chocolate_pudding",
+    "cookies",
+    "cream_cheese",
+    "ketchup",
+    "macaroni_and_cheese",
+    "milk",
+    "orange_juice",
+    "popcorn",
+    "salad_dressing",
+    "new_salad_dressing",
+    "tomato_sauce",
+    "white_bowl",
+    "akita_black_bowl",
+    "plate",
+    "glazed_rim_porcelain_ramekin",
+    "red_coffee_mug",
+    "porcelain_mug",
+    "white_yellow_mug",
+    "chefmate_8_frypan",
+    "bowl_drainer",
+    "moka_pot",
+    "window",
+    "faucet",
+    "black_book",
+    "yellow_book",
+    "desk_caddy",
+    "wine_bottle",
 ]
 
 
@@ -44,9 +68,13 @@ class GenerateConfig:
     # ------------------------------------------------------------------
     # Model‑specific parameters
     # ------------------------------------------------------------------
-    model_family: str = "openvla"
-    pretrained_checkpoint: Union[str, Path] | None = "/home/featurize/Robo_Data/openvla-oft/homerobo_test_ckpt/openvla-7b+homerobo_dataset+b4+lr-5e-05+lora-r32+dropout-0.0--image_aug--parallel_dec--8_acts_chunk--continuous_acts--L1_regression--3rd_person_img--wrist_img--proprio_state--180000_chkpt"
-    
+    model_family: str = "openvla"  # "openvla" or "lerobot"
+    pretrained_checkpoint: Union[str, Path] | None = "moojink/openvla-7b-oft-finetuned-libero-spatial-object-goal-10"
+
+    # Lerobot specific
+    lerobot_checkpoint: Optional[str] = None # e.g. "lerobot/act_aloha_sim_transfer_cube_human"
+
+    # OpenVLA specific
     use_l1_regression: bool = True
     use_diffusion: bool = False
     num_diffusion_steps: int = 50
@@ -56,14 +84,14 @@ class GenerateConfig:
     center_crop: bool = True
     num_open_loop_steps: int = 8
     unnorm_key: Union[str, Path] = "robocerebra"
-    load_in_8bit: bool = False
+    load_in_8bit: bool = True
     load_in_4bit: bool = False
 
     # ------------------------------------------------------------------
     # RoboCerebra environment‑specific parameters
     # ------------------------------------------------------------------
-    robocerebra_root: str = "/home/featurize/RoboCerebra/RoboCerebra_Bench"
-    init_files_root: str = "/home/featurize/RoboCerebra/RoboCerebra_Bench/init_files"
+    robocerebra_root: str = "/home/petko/projects/RoboCerebra/RoboCerebra_Bench"
+    init_files_root: str = "/home/petko/projects/RoboCerebra/RoboCerebra_Bench/init_files"
     task_suite_name: str = "robocerebra"
     task_types: List[str] = None  # Which task types to evaluate
     num_steps_wait: int = 15
@@ -87,7 +115,7 @@ class GenerateConfig:
     wandb_entity: str = "<WANDB_ENTITY>"  # TODO: Set your WandB entity name
     wandb_project: str = "<WANDB_PROJECT>"  # TODO: Set your WandB project name
     seed: int = 7
-    
+
     def __post_init__(self):
         if self.task_types is None:
             self.task_types = ["Ideal", "Memory_Execution", "Memory_Exploration", "Mix", "Observation_Mismatching", "Random_Disturbance"]
@@ -111,7 +139,11 @@ class GenerateConfig:
 def validate_config(cfg: GenerateConfig) -> None:
     assert cfg.pretrained_checkpoint, "pretrained_checkpoint must not be None!"
     if "image_aug" in str(cfg.pretrained_checkpoint):
-        assert cfg.center_crop, "Expecting center_crop=True because model was trained with image augmentations!"
-    assert not (cfg.load_in_8bit and cfg.load_in_4bit), "Cannot use both 8‑bit and 4‑bit quantization!"
+        assert cfg.center_crop, (
+            "Expecting center_crop=True because model was trained with image augmentations!"
+        )
+    assert not (cfg.load_in_8bit and cfg.load_in_4bit), (
+        "Cannot use both 8‑bit and 4‑bit quantization!"
+    )
     if cfg.dynamic:
         assert cfg.resume
