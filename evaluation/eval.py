@@ -15,7 +15,6 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import draccus
 import numpy as np
-import tqdm
 import wandb
 
 # Add project root to path
@@ -238,8 +237,11 @@ def run_episode(
 
         # Policy inference & execution
         observation, img = prepare_observation(obs, resize_size)
-        replay_images_all.append(img)
-        replay_images_seg.append(img)
+        # Only accumulate images if video saving is enabled
+        if cfg.save_episode_videos:
+            replay_images_all.append(img)
+        if cfg.save_segment_videos:
+            replay_images_seg.append(img)
 
         # Determine description for model
         if cfg.task_description_suffix != "" and not cfg.complete_description:
@@ -406,7 +408,8 @@ def run_task(
     task_agent_subtasks = 0
     task_possible_subtasks = 0
 
-    for ep_idx in tqdm.tqdm(range(episodes)):
+    for ep_idx in range(episodes):
+        log_message(f"  Episode {ep_idx + 1}/{episodes}", log_file)
         initial_state = None
         if initial_states and initial_states[0] is not None:
             if cfg.initial_states_path == "DEFAULT":
@@ -505,6 +508,17 @@ def eval_robocerebra(cfg: GenerateConfig) -> float:
     results_by_task_type = {}
     all_task_results = []
 
+    # Calculate total tasks for progress tracking
+    import time
+    total_tasks = len(task_dirs)
+    completed_tasks = 0
+    eval_start_time = time.time()
+    task_times = []
+
+    log_message(f"=" * 60, log_file)
+    log_message(f"STARTING EVALUATION: {total_tasks} tasks total", log_file)
+    log_message(f"=" * 60, log_file)
+
     # Group tasks by type for better reporting
     for task_type in cfg.task_types:
         task_type_dirs = [(tt, td) for tt, td in task_dirs if tt == task_type]
@@ -556,6 +570,27 @@ def eval_robocerebra(cfg: GenerateConfig) -> float:
         task_type_possible_subtasks = 0
 
         for _, task_dir in task_type_dirs:
+            task_start_time = time.time()
+            completed_tasks += 1
+
+            # Progress header
+            elapsed = time.time() - eval_start_time
+            if task_times:
+                avg_task_time = sum(task_times) / len(task_times)
+                remaining_tasks = total_tasks - completed_tasks
+                eta_seconds = remaining_tasks * avg_task_time
+                eta_str = f", ETA: {eta_seconds/60:.1f}min" if eta_seconds > 60 else f", ETA: {eta_seconds:.0f}s"
+            else:
+                eta_str = ""
+
+            log_message(
+                f"\n{'='*60}\n"
+                f"[PROGRESS] Task {completed_tasks}/{total_tasks} ({100*completed_tasks/total_tasks:.0f}%) | "
+                f"Type: {task_type} | Case: {task_dir.name} | Elapsed: {elapsed/60:.1f}min{eta_str}\n"
+                f"{'='*60}",
+                log_file,
+            )
+
             eps, succ, subtasks, possible, task_result = run_task(
                 cfg,
                 task_type,
@@ -564,6 +599,11 @@ def eval_robocerebra(cfg: GenerateConfig) -> float:
                 resize_size,
                 log_file,
             )
+
+            # Track task time for ETA calculation
+            task_time = time.time() - task_start_time
+            task_times.append(task_time)
+            log_message(f"[PROGRESS] Task completed in {task_time:.1f}s", log_file)
 
             all_task_results.append(task_result)
             task_type_episodes += eps
@@ -614,6 +654,13 @@ def eval_robocerebra(cfg: GenerateConfig) -> float:
         else 0
     )
 
+    total_eval_time = time.time() - eval_start_time
+    log_message("\n" + "=" * 60, log_file)
+    log_message("EVALUATION COMPLETE", log_file)
+    log_message(f"Total time: {total_eval_time/60:.1f} minutes ({total_eval_time:.0f}s)", log_file)
+    log_message(f"Tasks evaluated: {completed_tasks}", log_file)
+    if task_times:
+        log_message(f"Average time per task: {sum(task_times)/len(task_times):.1f}s", log_file)
     log_message("=" * 60, log_file)
     log_message("FINAL RESULTS", log_file)
     log_message("=" * 60, log_file)

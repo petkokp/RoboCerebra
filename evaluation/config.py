@@ -68,9 +68,7 @@ class GenerateConfig:
     # ------------------------------------------------------------------
     # Model‑specific parameters
     # ------------------------------------------------------------------
-    model_family: str = "openvla"  # "openvla" or "lerobot"
-    pretrained_checkpoint: Union[str, Path] | None = "moojink/openvla-7b-oft-finetuned-libero-spatial-object-goal-10"
-
+    model_family: str = "lerobot"  # "openvla" or "lerobot"
     # Lerobot specific
     lerobot_checkpoint: Optional[str] = None # e.g. "lerobot/act_aloha_sim_transfer_cube_human"
 
@@ -95,7 +93,7 @@ class GenerateConfig:
     task_suite_name: str = "robocerebra"
     task_types: List[str] = None  # Which task types to evaluate
     num_steps_wait: int = 15
-    num_trials_per_task: int = 5
+    num_trials_per_task: int = 1
     env_img_res: int = 256
     switch_steps: int = 150
     resume: bool = False  # Whether to enable the resume mechanism
@@ -105,6 +103,12 @@ class GenerateConfig:
     dynamic: bool = False
     use_init_files: bool = True  # Whether to use init files (new feature)
     initial_states_path: str = "DEFAULT"  # For compatibility with LIBERO init system
+
+    # ------------------------------------------------------------------
+    # Video saving options
+    # ------------------------------------------------------------------
+    save_segment_videos: bool = False  # Save per-segment videos (slow, many files)
+    save_episode_videos: bool = True   # Save final episode videos
 
     # ------------------------------------------------------------------
     # Utils
@@ -137,8 +141,8 @@ class GenerateConfig:
 
 
 def validate_config(cfg: GenerateConfig) -> None:
-    assert cfg.pretrained_checkpoint, "pretrained_checkpoint must not be None!"
-    if "image_aug" in str(cfg.pretrained_checkpoint):
+    assert cfg.lerobot_checkpoint, "lerobot_checkpoint must not be None!"
+    if "image_aug" in str(cfg.lerobot_checkpoint):
         assert cfg.center_crop, (
             "Expecting center_crop=True because model was trained with image augmentations!"
         )

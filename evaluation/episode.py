@@ -292,39 +292,40 @@ def handle_segment_transition(
     log_file=None,
 ) -> Tuple[Dict, List[np.ndarray], int, bool, bool, Optional[int]]:
     """Handle transition between segments including video saving and resume logic."""
-    # Save the previous segment's video
     seg_success = seg_increment_accum
     log_message(
         f"[Segment {prev_step_idx}] Subtasks completed = {seg_success}", log_file
     )
-    suffix = "_complete_description" if cfg.complete_description else ""
-    name = f"{episode_idx}_step{prev_step_idx}{suffix}"
 
-    # Save the video and get its path
-    mp4_path = save_rollout_video(
-        replay_images_seg,
-        name,
-        success=seg_success > 0,
-        task_description=naming_step_desc[prev_step_idx],
-        log_file=log_file,
-        task_suite=f"{cfg.task_suite_name}_{task_type}",
-        task_name=case_name,
-    )
+    # Only save segment videos if enabled (disabled by default for speed)
+    if cfg.save_segment_videos:
+        suffix = "_complete_description" if cfg.complete_description else ""
+        name = f"{episode_idx}_step{prev_step_idx}{suffix}"
+
+        mp4_path = save_rollout_video(
+            replay_images_seg,
+            name,
+            success=seg_success > 0,
+            task_description=naming_step_desc[prev_step_idx],
+            log_file=log_file,
+            task_suite=f"{cfg.task_suite_name}_{task_type}",
+            task_name=case_name,
+        )
+
+        json_path = mp4_path.rsplit(".", 1)[0] + ".json"
+        with open(json_path, "w", encoding="utf-8") as jf:
+            json.dump(
+                {
+                    "video": os.path.basename(mp4_path),
+                    "completed_subtasks": seg_success,
+                    "success": seg_success > 0,
+                },
+                jf,
+                ensure_ascii=False,
+                indent=2,
+            )
 
     comp_end_dict, _, _ = env._check_success(goal)
-
-    json_path = mp4_path.rsplit(".", 1)[0] + ".json"
-    with open(json_path, "w", encoding="utf-8") as jf:
-        json.dump(
-            {
-                "video": os.path.basename(mp4_path),
-                "completed_subtasks": seg_success,
-                "success": seg_success > 0,
-            },
-            jf,
-            ensure_ascii=False,
-            indent=2,
-        )
 
     # Prepare the starting completion baseline for the next segment
     comp_start_dict = comp_end_dict
@@ -436,46 +437,51 @@ def finalize_episode(
     log_message(
         f"[Segment {seg_no}] Subtasks counted = {seg_success} (final segment)", log_file
     )
-    suffix = "_complete_description" if cfg.complete_description else ""
-    name = f"{episode_idx}_step{prev_step_idx}{suffix}"
-    save_rollout_video(
-        replay_images_seg,
-        name,
-        success=seg_success > 0,
-        task_description=naming_step_desc[prev_step_idx],
-        log_file=log_file,
-        task_suite=f"{cfg.task_suite_name}_{task_type}",
-        task_name=case_name,
-    )
+
+    # Save final segment video only if enabled
+    if cfg.save_segment_videos:
+        suffix = "_complete_description" if cfg.complete_description else ""
+        name = f"{episode_idx}_step{prev_step_idx}{suffix}"
+        save_rollout_video(
+            replay_images_seg,
+            name,
+            success=seg_success > 0,
+            task_description=naming_step_desc[prev_step_idx],
+            log_file=log_file,
+            task_suite=f"{cfg.task_suite_name}_{task_type}",
+            task_name=case_name,
+        )
 
     # Determine overall task success
     _, _, all_done = env._check_success(goal)
 
-    suffix = "_complete_description" if cfg.complete_description else ""
-    name = f"{episode_idx}{suffix}"
-    mp4_path = save_rollout_video(
-        replay_images_all,
-        name,
-        success=all_done,
-        task_description=naming_step_desc[prev_step_idx],
-        log_file=log_file,
-        task_suite=f"{cfg.task_suite_name}_{task_type}",
-        task_name=case_name,
-    )
-
-    # Generate JSON for the complete video
-    json_path = mp4_path.rsplit(".", 1)[0] + ".json"
-    with open(json_path, "w", encoding="utf-8") as jf:
-        json.dump(
-            {
-                "video": os.path.basename(mp4_path),
-                "completed_subtasks": [],  # This would need to be tracked separately
-                "episode_success": all_done,
-            },
-            jf,
-            ensure_ascii=False,
-            indent=2,
+    # Save complete episode video if enabled
+    if cfg.save_episode_videos:
+        suffix = "_complete_description" if cfg.complete_description else ""
+        name = f"{episode_idx}{suffix}"
+        mp4_path = save_rollout_video(
+            replay_images_all,
+            name,
+            success=all_done,
+            task_description=naming_step_desc[prev_step_idx],
+            log_file=log_file,
+            task_suite=f"{cfg.task_suite_name}_{task_type}",
+            task_name=case_name,
         )
+
+        # Generate JSON for the complete video
+        json_path = mp4_path.rsplit(".", 1)[0] + ".json"
+        with open(json_path, "w", encoding="utf-8") as jf:
+            json.dump(
+                {
+                    "video": os.path.basename(mp4_path),
+                    "completed_subtasks": [],
+                    "episode_success": all_done,
+                },
+                jf,
+                ensure_ascii=False,
+                indent=2,
+            )
 
     # Adjust effective total goals to exclude dynamic shift forced completions
     effective_total_goals = (

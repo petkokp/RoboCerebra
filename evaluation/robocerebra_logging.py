@@ -28,7 +28,7 @@ BASE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def setup_logging(cfg: GenerateConfig):
-    run_id = f"EVAL-{cfg.task_suite_name}-{cfg.model_family}-{DATE_TIME}"
+    run_id = f"EVAL-{cfg.task_suite_name}-{cfg.lerobot_checkpoint.split('/')[-1]}-{DATE_TIME}"
     if cfg.run_id_note:
         run_id += f"--{cfg.run_id_note}"
     os.makedirs(cfg.local_log_dir, exist_ok=True)
@@ -74,7 +74,6 @@ def save_results_log(
             "run_id": run_id,
             "timestamp": datetime.now().isoformat(),
             "model_family": cfg.model_family,
-            "pretrained_checkpoint": str(cfg.pretrained_checkpoint),
             "task_suite_name": cfg.task_suite_name,
             "seed": cfg.seed,
             "num_trials_per_task": cfg.num_trials_per_task,

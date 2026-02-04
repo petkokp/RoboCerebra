@@ -1,6 +1,6 @@
-# RoboCerebra OpenVLA Evaluation Suite
+# RoboCerebra Lerobot Evaluation Suite
 
-Evaluation tool for OpenVLA-OFT model on RoboCerebra benchmark, designed with modular architecture.
+Evaluation tool for lerobot model on RoboCerebra benchmark, designed with modular architecture.
 
 ## Setup
 
@@ -20,12 +20,12 @@ huggingface-cli download qiukingballball/RoboCerebraBench --local-dir ./RoboCere
 
 **Important**: Before running evaluation, configure the following placeholders in `config.py`:
 
-- `<PRETRAINED_CHECKPOINT_PATH>` → Your OpenVLA-OFT model checkpoint path
+- `<LEROBOT_CHECKPOINT>` → Your lerobot model checkpoint path
 - `<ROBOCEREBRA_BENCH_PATH>` → RoboCerebra benchmark dataset root directory (e.g., `./RoboCerebra_Bench`)
 
 Example:
 ```python
-pretrained_checkpoint = "/path/to/your/openvla-checkpoint"
+lerobot_checkpoint = "/path/to/your/lerobot-checkpoint"
 robocerebra_root = "/path/to/RoboCerebra_Bench"
 ```
 
@@ -33,7 +33,7 @@ robocerebra_root = "/path/to/RoboCerebra_Bench"
 
 ```
 evaluation/
-├── eval_openvla.py           # OpenVLA evaluation main entry (396 lines)
+├── eval.py                   # evaluation main entry (396 lines)
 ├── config.py                 # Configuration management (87 lines)
 ├── utils.py                  # Data processing tools (422 lines)
 ├── robocerebra_logging.py    # Logging and results saving (141 lines)
@@ -52,32 +52,32 @@ evaluation/
 cd <ROBOCEREBRA_PATH>/evaluation
 
 # Run with default configuration (evaluate all task types)
-python eval_openvla.py
+python eval.py
 
 # Specify GPU and task types
-CUDA_VISIBLE_DEVICES=0 python eval_openvla.py --task_types ["Ideal", "Random_Disturbance"]
+CUDA_VISIBLE_DEVICES=0 python eval.py --task_types ["Ideal", "Random_Disturbance"]
 ```
 
 ### Common Configurations
 
 ```bash
 # Random_Disturbance task evaluation
-python eval_openvla.py \
+python eval.py \
   --task_types ["Random_Disturbance"] \
   --num_trials_per_task 5
 
 # Mix task evaluation 
-python eval_openvla.py \
+python eval.py \
   --task_types ["Mix"] \
   --num_trials_per_task 3
 
-# Specify OpenVLA-OFT model checkpoint
-python eval_openvla.py \
-  --pretrained_checkpoint "/path/to/openvla-oft/checkpoint" \
+# Specify lerobot model checkpoint
+python eval.py \
+  --lerobot_checkpoint "/path/to/lerobot_checkpoint" \
   --task_types ["Ideal"]
 
 # Use specific task description suffix
-python eval_openvla.py \
+python eval.py \
   --task_types ["Random_Disturbance"] \
 ```
 
@@ -89,9 +89,9 @@ python eval_openvla.py \
 - `--init_files_root`: Initial state files directory (default: `<ROBOCEREBRA_BENCH_PATH>/init_files`)
 - `--num_trials_per_task`: Number of trials per task (default: 5)
 
-### OpenVLA-OFT Model Configuration
-- `--pretrained_checkpoint`: OpenVLA-OFT model checkpoint path
-- `--model_family`: Model type (fixed: "openvla")
+### Lerobot Model Configuration
+- `--lerobot_checkpoint`: lerobot model checkpoint path
+- `--model_family`: Model type (fixed: "lerobot")
 - `--use_l1_regression`: Use L1 regression head (default: True)
 - `--use_proprio`: Whether to use proprioceptive information (default: True)
 - `--center_crop`: Image center cropping (default: True)
@@ -112,8 +112,8 @@ python eval_openvla.py \
 ## Output Files
 
 ### Log Files
-- `./experiments/logs/EVAL-robocerebra-openvla-{timestamp}.txt`: Detailed execution logs
-- `./experiments/logs/EVAL-robocerebra-openvla-{timestamp}_results.json`: JSON format results
+- `./experiments/logs/EVAL-robocerebra-lerobot-{timestamp}.txt`: Detailed execution logs
+- `./experiments/logs/EVAL-robocerebra-lerobot-{timestamp}_results.json`: JSON format results
 
 ### Video Files
 ```
@@ -125,7 +125,7 @@ rollouts/{timestamp}/{task_type}/{case_name}/
 ## Module Architecture
 
 ### Core Modules
-- **eval_openvla.py**: OpenVLA-OFT model evaluation main logic
+- **eval.py**: lerobot model evaluation main logic
 - **config.py**: Evaluation parameter configuration and validation
 - **utils.py**: Data loading and environment processing tools
 

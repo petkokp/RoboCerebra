@@ -210,11 +210,7 @@ def apply_pi0_patches():
             if torch.is_tensor(timestep) and timestep.is_floating_point():
                 timestep = timestep.to(target_dtype)
 
-            # Force all submodules to match
-            self.action_time_mlp_in.to(target_dtype)
-            self.action_time_mlp_out.to(target_dtype)
-            self.action_in_proj.to(target_dtype)
-            self.action_out_proj.to(target_dtype)
+            # NOTE: Submodule dtype conversion is done ONCE during load(), not per-step
 
             # Call original denoise_step to compute embeddings
             from lerobot.policies.pi0.modeling_pi0 import make_att_2d_masks
@@ -300,25 +296,9 @@ def apply_pi0_patches():
             batch = cast_tensors(batch)
             kwargs = cast_tensors(kwargs)
 
-            # Also ensure all submodules are correctly cast (e.g. action_in_proj)
-            # We target self.model which is the PI0Pytorch instance
-            if hasattr(self, "model"):
-                # Use recursive to=dtype to catch everything
-                self.model.to(dtype=target_dtype)
-                # Specifically force linear layers again
-                for m in self.model.modules():
-                    if (
-                        hasattr(m, "weight")
-                        and m.weight is not None
-                        and getattr(m.weight, "is_floating_point", lambda: False)()
-                    ):
-                        m.weight.data = m.weight.data.to(target_dtype)
-                    if (
-                        hasattr(m, "bias")
-                        and m.bias is not None
-                        and getattr(m.bias, "is_floating_point", lambda: False)()
-                    ):
-                        m.bias.data = m.bias.data.to(target_dtype)
+            # NOTE: Model dtype conversion is done ONCE during load(), not per-inference
+            # The previous code that called self.model.to() and iterated modules here
+            # was extremely expensive and caused ~60% GPU idle time
 
             return original_select_action(self, batch, **kwargs)
 
@@ -326,23 +306,10 @@ def apply_pi0_patches():
 
         logger.info("Applied fix to PI0Policy.select_action for dtype consistency")
 
-        # Patch 8: Fix PaliGemmaWithExpertModel forward to ensure submodule casting
-        # Some submodules might be missed by simple self.to(dtype) if they are custom
-        original_pg_forward = modeling_pi0.PaliGemmaWithExpertModel.forward
-
-        def patched_pg_forward(self, *args, **kwargs):
-            # Check for consistent dtype before each forward pass
-            target_dtype = next(self.parameters()).dtype
-
-            # Action expert submodules
-            if hasattr(self, "gemma_expert"):
-                self.gemma_expert.to(target_dtype)
-
-            return original_pg_forward(self, *args, **kwargs)
-
-        modeling_pi0.PaliGemmaWithExpertModel.forward = patched_pg_forward
+        # NOTE: Previous patch 8 (patched_pg_forward) that called self.gemma_expert.to(target_dtype)
+        # on every forward pass has been removed - dtype conversion is done ONCE during load()
         logger.info(
-            "Applied fix to PaliGemmaWithExpertModel.forward for dtype consistency"
+            "Skipping PaliGemmaWithExpertModel.forward patch - dtype handled at load time"
         )
 
     except (ImportError, AttributeError) as e:
@@ -381,11 +348,7 @@ def apply_pi0_patches():
             if torch.is_tensor(timestep) and timestep.is_floating_point():
                 timestep = timestep.to(target_dtype)
 
-            # Force all submodules to match dtype (PI05 uses different names than PI0)
-            self.time_mlp_in.to(target_dtype)
-            self.time_mlp_out.to(target_dtype)
-            self.action_in_proj.to(target_dtype)
-            self.action_out_proj.to(target_dtype)
+            # NOTE: Submodule dtype conversion is done ONCE during load(), not per-step
 
             # Compute suffix embeddings (PI05 doesn't use state in embed_suffix)
             suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = (
@@ -465,15 +428,7 @@ def apply_pi0_patches():
             batch = cast_tensors(batch)
             kwargs = cast_tensors(kwargs)
 
-            if hasattr(self, "model"):
-                self.model.to(dtype=target_dtype)
-                for m in self.model.modules():
-                    if hasattr(m, "weight") and m.weight is not None:
-                        if getattr(m.weight, "is_floating_point", lambda: False)():
-                            m.weight.data = m.weight.data.to(target_dtype)
-                    if hasattr(m, "bias") and m.bias is not None:
-                        if getattr(m.bias, "is_floating_point", lambda: False)():
-                            m.bias.data = m.bias.data.to(target_dtype)
+            # NOTE: Model dtype conversion is done ONCE during load(), not per-inference
 
             return original_pi05_select_action(self, batch, **kwargs)
 

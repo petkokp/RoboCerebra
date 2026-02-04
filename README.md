@@ -95,7 +95,7 @@ pip install "peft>=0.17.0"
 **Important**: Configure the following placeholder paths before use:
 
 1. **Edit `evaluation/config.py`**:
-   - `<PRETRAINED_CHECKPOINT_PATH>` → Your pretrained model checkpoint path
+   - `<LEROBOT_CHECKPOINT>` → Your pretrained model checkpoint path
    - `<ROBOCEREBRA_BENCH_PATH>` → RoboCerebra benchmark dataset path
    - `<WANDB_ENTITY>` → Your WandB entity name (if using WandB)
    - `<WANDB_PROJECT>` → Your WandB project name (if using WandB)
